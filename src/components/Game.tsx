@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import YouTube from 'react-youtube';
 import type { Player } from '../types/game';
 import { Terminal, Trophy, Timer } from 'lucide-react';
@@ -14,7 +14,14 @@ interface GameProps {
 
 const Game: React.FC<GameProps> = ({ players, timeLeft, totalTime, currentVideoId, onAnswerSubmit, logs }) => {
   const [answer, setAnswer] = useState('');
+  const logContainerRef = useRef<HTMLDivElement>(null);
   const progressPercent = (timeLeft / totalTime) * 100;
+
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [logs]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,7 +73,10 @@ const Game: React.FC<GameProps> = ({ players, timeLeft, totalTime, currentVideoI
                <Terminal size={14} className="text-ums-primary" />
                <span className="text-[10px] text-ums-primary font-bold uppercase tracking-widest">로그</span>
              </div>
-             <div className="flex-1 overflow-y-auto flex flex-col gap-1 text-[11px] font-mono scrollbar-thin scrollbar-thumb-ums-primary">
+             <div 
+               ref={logContainerRef}
+               className="flex-1 overflow-y-auto flex flex-col gap-1 text-[11px] font-mono scrollbar-thin scrollbar-thumb-ums-primary"
+             >
                {logs.map((log, i) => (
                  <p key={i} className={`${log.startsWith('[시스템]') ? 'text-ums-secondary' : 'text-white'}`}>
                    {`> ${log}`}

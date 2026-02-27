@@ -6,10 +6,11 @@ interface RoomListProps {
   rooms: Room[];
   onJoinRoom: (room: Room) => void;
   onCreateRoom: (title: string, maxPlayers: number, category: string) => void;
+  onRefreshRooms: () => void;
   nickname: string;
 }
 
-const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, nickname }) => {
+const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, onRefreshRooms, nickname }) => {
   const [showCreate, setShowCreate] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [maxPlayers, setMaxPlayers] = useState(8);
@@ -30,12 +31,20 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, ni
           <h1 className="text-2xl font-bold uppercase italic">대기실 로비</h1>
           <p className="text-xs text-ums-secondary uppercase">환영합니다, {nickname}님</p>
         </div>
-        <button 
-          className="ums-button flex items-center gap-2"
-          onClick={() => setShowCreate(true)}
-        >
-          <Plus size={16} /> 방 만들기
-        </button>
+        <div className="flex gap-2">
+          <button 
+            className="ums-button-secondary text-xs px-3 py-2"
+            onClick={onRefreshRooms}
+          >
+            새로고침
+          </button>
+          <button 
+            className="ums-button flex items-center gap-2"
+            onClick={() => setShowCreate(true)}
+          >
+            <Plus size={16} /> 방 만들기
+          </button>
+        </div>
       </div>
 
       {showCreate && (
@@ -117,23 +126,33 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, ni
             <p className="uppercase tracking-widest text-sm">현재 생성된 방이 없습니다. 새로운 방을 만들어보세요.</p>
           </div>
         ) : (
-          rooms.map(room => (
-            <div 
-              key={room.id} 
-              className="retro-card flex flex-col gap-4"
-              onClick={() => onJoinRoom(room)}
-            >
-              <div className="flex justify-between items-start">
-                <h3 className="text-xl font-bold uppercase truncate pr-2">{room.name}</h3>
-                <div className="flex items-center gap-1 text-xs font-bold bg-white text-black px-1">
-                  <Users size={12} /> {room.playerCount}/{room.maxPlayers}
+          rooms.map(room => {
+            const isPlaying = room.status === 'PLAYING';
+            return (
+              <div 
+                key={room.id} 
+                className={`retro-card flex flex-col gap-4 ${isPlaying ? 'opacity-60 grayscale cursor-not-allowed shadow-none' : ''}`}
+                onClick={() => !isPlaying && onJoinRoom(room)}
+              >
+                <div className="flex justify-between items-start">
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <h3 className="text-xl font-bold uppercase truncate pr-2">{room.name}</h3>
+                    {isPlaying && (
+                      <span className="text-[10px] font-bold text-ums-secondary bg-black/50 px-1 w-fit">
+                        게임 진행 중
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 text-xs font-bold bg-white text-black px-1 shrink-0">
+                    <Users size={12} /> {room.playerCount}/{room.maxPlayers}
+                  </div>
+                </div>
+                <div className="mt-auto border-t-2 border-ums-primary pt-2 flex justify-between items-center text-[10px] uppercase font-bold">
+                  <span>방장: {room.hostName}</span>
                 </div>
               </div>
-              <div className="mt-auto border-t-2 border-ums-primary pt-2 flex justify-between items-center text-[10px] uppercase font-bold">
-                <span>방장: {room.hostName}</span>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

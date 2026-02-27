@@ -11,11 +11,12 @@ export interface Room {
   hostName: string;
   playerCount: number;
   maxPlayers: number;
+  status: string;
 }
 
 export type GameEvent = 
-  | { type: 'PLAYER_JOIN'; nickname: string }
-  | { type: 'PLAYER_LEAVE'; nickname: string }
+  | { type: 'PLAYER_JOIN'; players: string[] }
+  | { type: 'PLAYER_LEAVE'; players: string[] }
   | { type: 'HOST_CHANGE'; newHost: string }
   | { type: 'CHAT'; nickname: string; message: string }
   | { type: 'GAME_START'; songCount: number }
