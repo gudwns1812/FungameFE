@@ -3,6 +3,7 @@ export interface Player {
   name: string;
   isHost: boolean;
   score: number;
+  colorIndex?: number; // 플레이어 슬롯 번호 (0~7), 색상 매핑용
 }
 
 export interface Room {

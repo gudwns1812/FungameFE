@@ -4,6 +4,7 @@ import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import type { Player, GameStatus, GameEvent, Room, GameStartInfo, RoundEndInfo } from '../types/game';
 import { stripTag } from '../utils/stringUtils';
+import { PLAYER_COLOR_INDEX_KEY } from '../utils/playerColor';
 
 // Configure axios base URL
 axios.defaults.baseURL = 'http://localhost:8080';
@@ -30,6 +31,11 @@ export const useGameLogic = () => {
   const [currentRound, setCurrentRound] = useState<number>(0);
   const [totalRound, setTotalRound] = useState<number>(0);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [myColorIndex, setMyColorIndex] = useState<number | null>(() => {
+    const saved = localStorage.getItem(PLAYER_COLOR_INDEX_KEY);
+    return saved !== null ? Number(saved) : null;
+  });
 
   const stompClient = useRef<Client | null>(null);
   const fetchRankRef = useRef<() => Promise<void>>(async () => { });
@@ -56,13 +62,14 @@ export const useGameLogic = () => {
           console.log('fetchRoomUsers:', { players, host });
           setPlayers(prev => {
             const prevMap = new Map(prev.map(p => [p.name, p]));
-            return players.map(name => {
+            return players.map((name, idx) => {
               const prevPlayer = prevMap.get(name);
               return {
                 id: name,
                 name,
                 isHost: name === host,
                 score: prevPlayer?.score ?? 0,
+                colorIndex: idx, // 배열 순서 = 슬롯 번호
               };
             });
           });
@@ -86,6 +93,10 @@ export const useGameLogic = () => {
             console.log("플레이어 이름이 같음");
             break;
           }
+          // 다른 플레이어의 상태에 따라 로그 추가
+          const action = event.type === 'PLAYER_JOIN' ? '입장' : '퇴장';
+          addLog(`[시스템] ${stripTag(event.player)}님이 ${action}하셨습니다.`);
+
           console.log("PLAYER_JOIN or PLAYER_LEAVE", roomId);
           fetchRoomUsers(roomId);
         }
@@ -112,7 +123,6 @@ export const useGameLogic = () => {
           message: event.message,
         });
         setLogs([]); // 채팅 로그 초기화
-        addLog(`[시스템] 게임 준비 중... (${event.category} / 총 ${event.songCount}곡 / ${event.message})`);
         break;
 
       case 'ROUND_START':
@@ -184,7 +194,6 @@ export const useGameLogic = () => {
       webSocketFactory: () => new SockJS('http://localhost:8080/ws-quiz'),
       reconnectDelay: 5000,
       onConnect: () => {
-        addLog('[시스템] 서버 연결 성공.');
         client.subscribe(`/subscribe/room/${targetRoomId}`, (message) => {
           console.log('message', message);
           const event: GameEvent = JSON.parse(message.body);
@@ -221,8 +230,24 @@ export const useGameLogic = () => {
     setPlayerIndex(null);
     setGameStartInfo(null);
     setRoundEndInfo(null);
-    addLog('[시스템] 방에서 퇴장했습니다.');
+    localStorage.removeItem(PLAYER_COLOR_INDEX_KEY);
+    setMyColorIndex(null);
   }, [roomId, nickname, addLog]);
+
+  const returnToLobby = useCallback(() => {
+    if (stompClient.current) {
+      stompClient.current.deactivate();
+    }
+    setRoomId(null);
+    setStatus('ROOM_LIST');
+    setPlayers([]);
+    setIsHost(false);
+    setPlayerIndex(null);
+    setGameStartInfo(null);
+    setRoundEndInfo(null);
+    localStorage.removeItem(PLAYER_COLOR_INDEX_KEY);
+    setMyColorIndex(null);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('ums_status', status);
@@ -343,10 +368,16 @@ export const useGameLogic = () => {
         headers: { playerName: encodeURIComponent(nickname) }
       });
       if (response.data.result === 'SUCCESS') {
+        const slotIndex = typeof response.data.data === 'number' ? response.data.data : null;
+        if (slotIndex !== null) {
+          localStorage.setItem(PLAYER_COLOR_INDEX_KEY, String(slotIndex));
+          setMyColorIndex(slotIndex);
+        }
+        clearLogs();
         setRoomId(room.id);
         setIsHost(room.hostName === nickname);
         setStatus('WAITING');
-        setPlayers([{ id: nickname, name: nickname, isHost: room.hostName === nickname, score: 0 }]);
+        setPlayers([{ id: nickname, name: nickname, isHost: room.hostName === nickname, score: 0, colorIndex: slotIndex ?? undefined }]);
         connectWebSocket(room.id);
         addLog(`[시스템] ${room.name} 방에 입장했습니다.`);
         window.history.pushState({ room: room.id }, '');
@@ -381,9 +412,10 @@ export const useGameLogic = () => {
       else if (code === 'G006') message = '이미 게임이 진행 중인 방입니다.';
       window.alert(message);
     }
-  }, [nickname, connectWebSocket]);
+  }, [nickname, connectWebSocket, clearLogs]);
 
   const createRoom = useCallback(async (title: string, maxPlayers: number, category: string, songCount: number) => {
+    setIsCreatingRoom(true);
     try {
       const response = await axios.post('/game/rooms', {
         title,
@@ -394,19 +426,23 @@ export const useGameLogic = () => {
       });
       if (response.data.result === 'SUCCESS') {
         const newRoomId = response.data.data;
+        localStorage.setItem(PLAYER_COLOR_INDEX_KEY, '0');
+        setMyColorIndex(0);
+        clearLogs();
         setRoomId(newRoomId);
         setIsHost(true);
         setStatus('WAITING');
-        setPlayers([{ id: nickname, name: nickname, isHost: true, score: 0 }]);
+        setPlayers([{ id: nickname, name: nickname, isHost: true, score: 0, colorIndex: 0 }]);
         connectWebSocket(newRoomId);
-        addLog(`[시스템] 방을 생성했습니다: ${title}`);
         window.history.pushState({ room: newRoomId }, '');
       }
     } catch (error) {
       console.error('Create room failed:', error);
       addLog('[오류] 방 생성에 실패했습니다.');
+    } finally {
+      setIsCreatingRoom(false);
     }
-  }, [nickname, addLog, connectWebSocket]);
+  }, [nickname, addLog, connectWebSocket, clearLogs]);
 
   const startGame = useCallback(async () => {
     if (!roomId || !isHost) return;
@@ -414,12 +450,8 @@ export const useGameLogic = () => {
       const response = await axios.post(`/game/rooms/${roomId}/start`, null, {
         headers: { playerName: encodeURIComponent(nickname) }
       });
-      if (response.data.result === 'SUCCESS') {
-        addLog('[시스템] 게임 시작 신호를 보냈습니다.');
-      }
     } catch (error) {
       console.error('Start game failed:', error);
-      addLog('[오류] 게임 시작에 실패했습니다.');
     }
   }, [roomId, isHost, nickname, addLog]);
 
@@ -485,10 +517,13 @@ export const useGameLogic = () => {
     currentRound,
     totalRound,
     isBootstrapping,
+    isCreatingRoom,
+    myColorIndex,
     enterLobby,
     joinRoom,
     createRoom,
     leaveRoom,
+    returnToLobby,
     startGame,
     sendMessage,
     setStatus,

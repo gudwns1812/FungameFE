@@ -25,10 +25,12 @@ function App() {
     currentRound,
     totalRound,
     isBootstrapping,
+    isCreatingRoom,
     enterLobby,
     joinRoom,
     createRoom,
     leaveRoom,
+    returnToLobby,
     startGame,
     sendMessage,
     fetchRooms,
@@ -84,18 +86,27 @@ function App() {
         <Route
           path="/rooms"
           element={
-            status === 'ROOM_LIST'
+            isCreatingRoom
               ? (
-                <RoomListPage
-                  rooms={rooms}
-                  nickname={nickname}
-                  onJoinRoom={joinRoom}
-                  onCreateRoom={createRoom}
-                  onRefreshRooms={fetchRooms}
-                  onChangeNickname={changeNickname}
-                />
+                <div className="w-full min-h-screen flex flex-col items-center justify-center gap-4 bg-black">
+                  <div className="w-8 h-8 border-4 border-ums-primary border-t-transparent rounded-full animate-spin" />
+                  <p className="text-ums-primary text-xs font-mono uppercase tracking-widest animate-pulse">
+                    방 생성 중...
+                  </p>
+                </div>
               )
-              : <Navigate to={currentPath} replace />
+              : status === 'ROOM_LIST'
+                ? (
+                  <RoomListPage
+                    rooms={rooms}
+                    nickname={nickname}
+                    onJoinRoom={joinRoom}
+                    onCreateRoom={createRoom}
+                    onRefreshRooms={fetchRooms}
+                    onChangeNickname={changeNickname}
+                  />
+                )
+                : <Navigate to={currentPath} replace />
           }
         />
         <Route
@@ -147,7 +158,7 @@ function App() {
               ? (
                 <ResultPage
                   rankings={players}
-                  onBackToLobby={leaveRoom}
+                  onBackToLobby={returnToLobby}
                 />
               )
               : <Navigate to={currentPath} replace />

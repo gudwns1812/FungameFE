@@ -3,6 +3,7 @@ import YouTube from 'react-youtube';
 import type { Player, GameStartInfo, RoundEndInfo } from '../types/game';
 import { Terminal, Trophy, Timer, Music, CheckCircle } from 'lucide-react';
 import { stripTag } from '../utils/stringUtils';
+import { getPlayerColor } from '../utils/playerColor';
 
 interface GameProps {
   players: Player[];
@@ -74,6 +75,32 @@ const Game: React.FC<GameProps> = ({
   };
 
   const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
+
+  /** 채팅 로그 "이름: 메시지" 파싱 → 이름에 색상 적용 */
+  const renderChatLog = (log: string, i: number) => {
+    if (log.startsWith('[시스템]') || log.startsWith('[오류]')) {
+      return (
+        <p key={i} className={log.startsWith('[오류]') ? 'text-red-400' : 'text-ums-secondary'}>
+          {`> ${log}`}
+        </p>
+      );
+    }
+    const colonIdx = log.indexOf(':');
+    if (colonIdx > 0) {
+      const senderName = log.substring(0, colonIdx);
+      const rest = log.substring(colonIdx);
+      const player = players.find(p => stripTag(p.name) === senderName || p.name === senderName);
+      const color = getPlayerColor(player?.colorIndex ?? null);
+      return (
+        <p key={i} className="text-white">
+          {'> '}
+          <span style={{ color }} className="font-bold">{senderName}</span>
+          {rest}
+        </p>
+      );
+    }
+    return <p key={i} className="text-white">{`> ${log}`}</p>;
+  };
 
   // 노래 정보 패널 내용 결정
   const renderSongPanel = () => {
@@ -147,22 +174,29 @@ const Game: React.FC<GameProps> = ({
           )}
         </div>
         <div className="flex-1 overflow-y-auto flex flex-col gap-1">
-          {sortedPlayers.map((p, idx) => (
-            <div
-              key={p.id}
-              className={`flex justify-between items-center px-2 py-1 border-l-2 text-xs
-                ${idx === 0
-                  ? 'border-ums-secondary text-ums-secondary bg-ums-secondary/5'
-                  : 'border-ums-primary/30 text-ums-primary'
-                }`}
-            >
-              <div className="flex items-center gap-1 min-w-0">
-                <span className="text-[10px] font-bold shrink-0">#{idx + 1}</span>
-                <span className="font-bold truncate uppercase text-[11px]">{stripTag(p.name)}</span>
+          {sortedPlayers.map((p, idx) => {
+            const color = getPlayerColor(p.colorIndex ?? null);
+            return (
+              <div
+                key={p.id}
+                className={`flex justify-between items-center px-2 py-1 border-l-2 text-xs
+                  ${idx === 0
+                    ? 'border-ums-secondary bg-ums-secondary/5'
+                    : 'border-ums-primary/30'
+                  }`}
+              >
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-[10px] font-bold shrink-0" style={{ color }}>
+                    #{idx + 1}
+                  </span>
+                  <span className="font-bold truncate uppercase text-[11px]" style={{ color }}>
+                    {stripTag(p.name)}
+                  </span>
+                </div>
+                <span className="font-bold ml-2 shrink-0 text-[11px]" style={{ color }}>{p.score}</span>
               </div>
-              <span className="font-bold ml-2 shrink-0 text-[11px]">{p.score}</span>
-            </div>
-          ))}
+            );
+          })}
           {sortedPlayers.length === 0 && (
             <p className="text-ums-primary/30 text-[9px] uppercase tracking-widest italic px-2">대기 중...</p>
           )}
@@ -229,17 +263,7 @@ const Game: React.FC<GameProps> = ({
             ref={logContainerRef}
             className="flex-1 overflow-y-auto flex flex-col gap-1 text-[11px] font-mono"
           >
-            {logs.map((log, i) => (
-              <p
-                key={i}
-                className={`${log.startsWith('[시스템]') ? 'text-ums-secondary' :
-                  log.startsWith('[오류]') ? 'text-red-400' :
-                    'text-white'
-                  }`}
-              >
-                {`> ${log}`}
-              </p>
-            ))}
+            {logs.map((log, i) => renderChatLog(log, i))}
             {logs.length === 0 && (
               <p className="text-ums-primary/30 italic uppercase tracking-widest text-[9px]">
                 대화를 시작해보세요...
