@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { Room } from '../types/game';
 import { Plus, Users } from 'lucide-react';
+import { stripTag } from '../utils/stringUtils';
 
 interface RoomListProps {
   rooms: Room[];
@@ -29,16 +30,16 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, on
       <div className="flex justify-between items-center ums-panel">
         <div>
           <h1 className="text-2xl font-bold uppercase italic">대기실 로비</h1>
-          <p className="text-xs text-ums-secondary uppercase">환영합니다, {nickname}님</p>
+          <p className="text-xs text-ums-secondary uppercase">환영합니다, {stripTag(nickname)}님</p>
         </div>
         <div className="flex gap-2">
-          <button 
+          <button
             className="ums-button-secondary text-xs px-3 py-2"
             onClick={onRefreshRooms}
           >
             새로고침
           </button>
-          <button 
+          <button
             className="ums-button flex items-center gap-2"
             onClick={() => setShowCreate(true)}
           >
@@ -50,11 +51,11 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, on
       {showCreate && (
         <div className="ums-panel border-ums-accent shadow-[8px_8px_0px_0px_rgba(255,255,255,0.3)] flex flex-col gap-4">
           <h2 className="text-lg font-bold uppercase text-ums-accent border-b-2 border-ums-accent pb-2">새로운 방 생성</h2>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1">
               <label className="text-[10px] uppercase font-bold text-ums-accent">방 제목</label>
-              <input 
+              <input
                 className="ums-input border-ums-accent text-ums-accent"
                 placeholder="방 제목..."
                 value={newRoomName}
@@ -64,7 +65,7 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, on
 
             <div className="flex flex-col gap-1">
               <label className="text-[10px] uppercase font-bold text-ums-accent">음악 카테고리</label>
-              <select 
+              <select
                 className="ums-input border-ums-accent text-ums-accent"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
@@ -77,7 +78,7 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, on
 
             <div className="flex flex-col gap-1">
               <label className="text-[10px] uppercase font-bold text-ums-accent">최대 인원 (2-8)</label>
-              <input 
+              <input
                 type="number"
                 min="2"
                 max="8"
@@ -89,7 +90,7 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, on
 
             <div className="flex flex-col gap-1">
               <label className="text-[10px] uppercase font-bold text-ums-accent opacity-50">방장 (자동 설정)</label>
-              <input 
+              <input
                 className="ums-input border-ums-accent text-ums-accent opacity-50"
                 value={nickname}
                 readOnly
@@ -98,7 +99,7 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, on
           </div>
 
           <div className="flex justify-end gap-4 mt-2">
-            <button 
+            <button
               className="ums-button bg-ums-accent"
               onClick={() => {
                 if (newRoomName.trim()) {
@@ -110,7 +111,7 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, on
             >
               생성
             </button>
-            <button 
+            <button
               className="ums-button-secondary"
               onClick={() => setShowCreate(false)}
             >
@@ -129,8 +130,8 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, on
           rooms.map(room => {
             const isPlaying = room.status === 'PLAYING';
             return (
-              <div 
-                key={room.id} 
+              <div
+                key={room.id}
                 className={`retro-card flex flex-col gap-4 ${isPlaying ? 'opacity-60 grayscale cursor-not-allowed shadow-none' : ''}`}
                 onClick={() => !isPlaying && onJoinRoom(room)}
               >
@@ -148,7 +149,7 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, on
                   </div>
                 </div>
                 <div className="mt-auto border-t-2 border-ums-primary pt-2 flex justify-between items-center text-[10px] uppercase font-bold">
-                  <span>방장: {room.hostName}</span>
+                  <span>방장: {stripTag(room.hostName)}</span>
                 </div>
               </div>
             );

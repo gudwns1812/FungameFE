@@ -14,14 +14,14 @@ export interface Room {
   status: string;
 }
 
-export type GameEvent = 
-  | { type: 'PLAYER_JOIN'; players: string[] }
-  | { type: 'PLAYER_LEAVE'; players: string[] }
+export type GameEvent =
+  | { type: 'PLAYER_JOIN'; player: string }
+  | { type: 'PLAYER_LEAVE'; player: string }
   | { type: 'HOST_CHANGE'; newHost: string }
-  | { type: 'CHAT'; nickname: string; message: string }
+  | { type: 'CHAT'; playerName: string; message: string }
   | { type: 'GAME_START'; songCount: number }
   | { type: 'TIMER_TICK'; remainingSeconds: number }
-  | { type: 'CORRECT_ANSWER'; nickname: string; answer: string; score: number }
+  | { type: 'CORRECT_ANSWER'; playerName: string; answer: string; score: number }
   | { type: 'ROUND_TIMEOUT'; nextSongIndex: number }
   | { type: 'GAME_END'; rankings: Record<string, number> };
 

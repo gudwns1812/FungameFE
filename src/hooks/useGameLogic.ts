@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import type { Player, GameStatus, GameEvent, Room } from '../types/game';
+import { stripTag } from '../utils/stringUtils';
 
 // Configure axios base URL
 axios.defaults.baseURL = 'http://localhost:8080';
@@ -34,40 +35,48 @@ export const useGameLogic = () => {
       try {
         const response = await axios.get(`/game/rooms/${targetRoomId}/users`, {
           // HTTP 헤더는 ASCII(ISO-8859-1)만 허용되므로 한글 닉네임은 인코딩해서 전송
-          headers: nickname ? { nickname: encodeURIComponent(nickname) } : undefined,
+          headers: nickname ? { playerName: encodeURIComponent(nickname) } : undefined,
         });
 
-        if (response.data?.result === 'SUCCESS' && Array.isArray(response.data.data)) {
-          console.log(response.data.data);
-          const users: string[] = response.data.data;
+        if (response.data?.result === 'SUCCESS' && response.data.data) {
+          const players: string[] = response.data.data.players ?? [];
+          const host: string = response.data.data.host ?? '';
+          console.log('fetchRoomUsers:', { players, host });
           setPlayers(prev => {
             const prevMap = new Map(prev.map(p => [p.name, p]));
-            return users.map(name => {
+            return players.map(name => {
               const prevPlayer = prevMap.get(name);
               return {
                 id: name,
                 name,
-                isHost: prevPlayer?.isHost ?? name === nickname ? isHost : false,
+                isHost: name === host,
                 score: prevPlayer?.score ?? 0,
               };
             });
           });
+          // 내 닉네임이 host와 같으면 isHost 동기화
+          setIsHost(host === nickname);
         }
       } catch (error) {
         console.error('Failed to fetch room users:', error);
       }
     },
-    [nickname, addLog, isHost],
+    [nickname],
   );
 
   const handleEvent = useCallback((event: GameEvent) => {
-    console.log("handleEvent" , event);
+    console.log("handleEvent", event);
     switch (event.type) {
       case 'PLAYER_JOIN':
       case 'PLAYER_LEAVE':
         if (roomId) {
           // 서버에서 최신 유저 목록을 가져와 players만 동기화
-          console.log("PLAYER_JOIN or PLAYER_LEAVE" , roomId);
+          if (event.player == nickname) {
+            console.log("플레이어 이름이 같음");
+            break;
+          }
+
+          console.log("PLAYER_JOIN or PLAYER_LEAVE", roomId);
           fetchRoomUsers(roomId);
         }
         break;
@@ -77,10 +86,10 @@ export const useGameLogic = () => {
           isHost: p.name === event.newHost
         })));
         setIsHost(event.newHost === nickname);
-        addLog(`[시스템] 방장이 ${event.newHost}님으로 변경되었습니다.`);
+        addLog(`[시스템] 방장이 ${stripTag(event.newHost)}님으로 변경되었습니다.`);
         break;
       case 'CHAT':
-        addLog(`${event.nickname}: ${event.message}`);
+        addLog(`${stripTag(event.playerName)}: ${event.message}`);
         break;
       case 'GAME_START':
         setStatus('PLAYING');
@@ -91,25 +100,27 @@ export const useGameLogic = () => {
         setTotalTime(30); // Default round time
         break;
       case 'CORRECT_ANSWER':
-        setPlayers(prev => prev.map(p => 
-          p.name === event.nickname ? { ...p, score: event.score } : p
+        setPlayers(prev => prev.map(p =>
+          p.name === event.playerName ? { ...p, score: event.score } : p
         ));
-        addLog(`[시스템] ${event.nickname}님이 정답을 맞혔습니다! 정답: ${event.answer}`);
+        addLog(`[시스템] ${stripTag(event.playerName)}님이 정답을 맞혔습니다! 정답: ${event.answer}`);
         break;
       case 'ROUND_TIMEOUT':
         addLog(`[시스템] 라운드가 종료되었습니다.`);
         break;
       case 'GAME_END':
-        { setStatus('RESULT');
-        const finalRankings: Player[] = Object.entries(event.rankings).map(([name, score]) => ({
-          id: name,
-          name,
-          score,
-          isHost: false // Final screen doesn't strictly need isHost
-        }));
-        setPlayers(finalRankings);
-        addLog('[시스템] 게임이 종료되었습니다.');
-        break; }
+        {
+          setStatus('RESULT');
+          const finalRankings: Player[] = Object.entries(event.rankings).map(([name, score]) => ({
+            id: name,
+            name,
+            score,
+            isHost: false // Final screen doesn't strictly need isHost
+          }));
+          setPlayers(finalRankings);
+          addLog('[시스템] 게임이 종료되었습니다.');
+          break;
+        }
     }
   }, [addLog, nickname, roomId, fetchRoomUsers]);
 
@@ -130,7 +141,7 @@ export const useGameLogic = () => {
       onConnect: () => {
         addLog('[시스템] 서버 연결 성공.');
         client.subscribe(`/subscribe/room/${targetRoomId}`, (message) => {
-          console.log('message' , message);
+          console.log('message', message);
           const event: GameEvent = JSON.parse(message.body);
           handleEventRef.current(event);
         });
@@ -146,23 +157,26 @@ export const useGameLogic = () => {
   }, [addLog, handleEvent]);
 
   const leaveRoom = useCallback(async () => {
-    if (!roomId) return;
-    try {
-      await axios.post(`/game/rooms/${roomId}/leave`, null, {
-        headers: { nickname: encodeURIComponent(nickname) }
-      });
-      if (stompClient.current) {
-        stompClient.current.deactivate();
+    // API 호출은 best-effort: 성공/실패에 관계없이 클라이언트 상태는 항상 초기화
+    if (roomId) {
+      try {
+        await axios.post(`/game/rooms/${roomId}/leave`, null, {
+          headers: { playerName: encodeURIComponent(nickname) }
+        });
+      } catch (error) {
+        console.error('Leave room failed (will still exit):', error);
       }
-      setRoomId(null);
-      setStatus('ROOM_LIST');
-      setPlayers([]);
-      setIsHost(false);
-      addLog('[시스템] 방에서 퇴장했습니다.');
-    } catch (error) {
-      console.error('Leave room failed:', error);
     }
+    if (stompClient.current) {
+      stompClient.current.deactivate();
+    }
+    setRoomId(null);
+    setStatus('ROOM_LIST');
+    setPlayers([]);
+    setIsHost(false);
+    addLog('[시스템] 방에서 퇴장했습니다.');
   }, [roomId, nickname, addLog]);
+
 
   useEffect(() => {
     localStorage.setItem('ums_status', status);
@@ -239,13 +253,13 @@ export const useGameLogic = () => {
     localStorage.setItem('ums_nickname', name);
     setNickname(name);
     setStatus('ROOM_LIST');
-    addLog(`[시스템] ${name}님, 시스템에 접속하였습니다.`);
+    addLog(`[시스템] ${stripTag(name)}님, 시스템에 접속하였습니다.`);
   }, [addLog]);
 
   const joinRoom = useCallback(async (room: Room) => {
     try {
       const response = await axios.post(`/game/rooms/${room.id}/join`, null, {
-        headers: { nickname: encodeURIComponent(nickname) }
+        headers: { playerName: encodeURIComponent(nickname) }
       });
       if (response.data.result === 'SUCCESS') {
         setRoomId(room.id);
@@ -254,7 +268,7 @@ export const useGameLogic = () => {
         setPlayers([{ id: nickname, name: nickname, isHost: room.hostName === nickname, score: 0 }]);
         connectWebSocket(room.id);
         addLog(`[시스템] ${room.name} 방에 입장했습니다.`);
-        
+
         // Push state to handle back button
         window.history.pushState({ room: room.id }, '');
       } else if (response.data.result === 'FAIL') {
@@ -316,7 +330,7 @@ export const useGameLogic = () => {
     if (!roomId || !isHost) return;
     try {
       const response = await axios.post(`/game/rooms/${roomId}/start`, null, {
-        headers: { nickname: encodeURIComponent(nickname) }
+        headers: { playerName: encodeURIComponent(nickname) }
       });
       if (response.data.result === 'SUCCESS') {
         addLog('[시스템] 게임 시작 신호를 보냈습니다.');
@@ -331,7 +345,7 @@ export const useGameLogic = () => {
     if (!roomId || !stompClient.current || !stompClient.current.connected) return;
     stompClient.current.publish({
       destination: `/publish/room/${roomId}/chat`,
-      headers: { nickname },
+      headers: { playerName: nickname },
       body: message
     });
   }, [roomId, nickname]);
