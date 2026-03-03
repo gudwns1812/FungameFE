@@ -7,7 +7,7 @@ import { stripTag } from '../utils/stringUtils';
 import { PLAYER_COLOR_INDEX_KEY } from '../utils/playerColor';
 
 // Configure axios base URL
-axios.defaults.baseURL = 'http://localhost:8080';
+axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL;
 
 export const useGameLogic = () => {
   const [nickname, setNickname] = useState(() => localStorage.getItem('ums_nickname') || '');
@@ -191,7 +191,7 @@ export const useGameLogic = () => {
     }
 
     const client = new Client({
-      webSocketFactory: () => new SockJS('http://localhost:8080/ws-quiz'),
+      webSocketFactory: () => new SockJS(import.meta.env.VITE_WS_URL),
       reconnectDelay: 5000,
       onConnect: () => {
         client.subscribe(`/subscribe/room/${targetRoomId}`, (message) => {
