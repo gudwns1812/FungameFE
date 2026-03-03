@@ -18,7 +18,7 @@ const NicknameEntry: React.FC<NicknameEntryProps> = ({ onEnter }) => {
     <div className="w-full max-w-md ums-panel flex flex-col gap-8 items-center py-12">
       <div className="text-center">
         <h1 className="text-4xl font-black text-ums-primary tracking-tighter uppercase italic mb-2">
-          레트로 퀴즈
+          노래 맞추기
         </h1>
         <p className="text-xs text-ums-secondary uppercase tracking-widest">이름을 입력해주세요.</p>
       </div>
@@ -26,17 +26,17 @@ const NicknameEntry: React.FC<NicknameEntryProps> = ({ onEnter }) => {
       <form onSubmit={handleSubmit} className="w-full flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <label className="text-xs uppercase font-bold text-ums-primary">플레이어 닉네임</label>
-          <input 
-            type="text" 
-            className="ums-input" 
-            placeholder="닉네임을 입력하세요..." 
+          <input
+            type="text"
+            className="ums-input"
+            placeholder="닉네임을 입력하세요..."
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
             autoFocus
           />
         </div>
 
-        <button 
+        <button
           type="submit"
           className="ums-button w-full mt-4"
           disabled={!nickname.trim()}

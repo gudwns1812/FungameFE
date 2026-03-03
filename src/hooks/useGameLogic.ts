@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
-import type { Player, GameStatus, GameEvent, Room } from '../types/game';
+import type { Player, GameStatus, GameEvent, Room, GameStartInfo, RoundEndInfo } from '../types/game';
 import { stripTag } from '../utils/stringUtils';
 
 // Configure axios base URL
@@ -21,13 +21,25 @@ export const useGameLogic = () => {
   const [timeLeft, setTimeLeft] = useState(30);
   const [totalTime, setTotalTime] = useState(30);
   const [logs, setLogs] = useState<string[]>([]);
-  const [currentVideoId] = useState('dQw4w9WgXcQ'); // Placeholder
+  const [currentVideoId, setCurrentVideoId] = useState('dQw4w9WgXcQ');
   const [isHost, setIsHost] = useState(false);
+  const [playerIndex, setPlayerIndex] = useState<number | null>(null);
+  const [gameStartInfo, setGameStartInfo] = useState<GameStartInfo | null>(null);
+  const [roundEndInfo, setRoundEndInfo] = useState<RoundEndInfo | null>(null);
+  const [roundIndex, setRoundIndex] = useState<number>(0);
+  const [currentRound, setCurrentRound] = useState<number>(0);
+  const [totalRound, setTotalRound] = useState<number>(0);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
 
   const stompClient = useRef<Client | null>(null);
+  const fetchRankRef = useRef<() => Promise<void>>(async () => { });
 
   const addLog = useCallback((msg: string) => {
     setLogs(prev => [...prev.slice(-49), msg]);
+  }, []);
+
+  const clearLogs = useCallback(() => {
+    setLogs([]);
   }, []);
 
   const fetchRoomUsers = useCallback(
@@ -70,57 +82,90 @@ export const useGameLogic = () => {
       case 'PLAYER_JOIN':
       case 'PLAYER_LEAVE':
         if (roomId) {
-          // 서버에서 최신 유저 목록을 가져와 players만 동기화
           if (event.player == nickname) {
             console.log("플레이어 이름이 같음");
             break;
           }
-
           console.log("PLAYER_JOIN or PLAYER_LEAVE", roomId);
           fetchRoomUsers(roomId);
         }
         break;
+
       case 'HOST_CHANGE':
         setPlayers(prev => prev.map(p => ({
           ...p,
           isHost: p.name === event.newHost
         })));
         setIsHost(event.newHost === nickname);
-        addLog(`[시스템] 방장이 ${stripTag(event.newHost)}님으로 변경되었습니다.`);
         break;
+
       case 'CHAT':
         addLog(`${stripTag(event.playerName)}: ${event.message}`);
         break;
+
       case 'GAME_START':
-        setStatus('PLAYING');
-        addLog(`[시스템] 게임이 시작되었습니다! (총 ${event.songCount}곡)`);
+        // status는 PLAYING으로 바꾸지 않음 — ROUND_START에서 처리
+        setGameStartInfo({
+          gameType: event.gameType,
+          category: event.category,
+          songCount: event.songCount,
+          message: event.message,
+        });
+        setLogs([]); // 채팅 로그 초기화
+        addLog(`[시스템] 게임 준비 중... (${event.category} / 총 ${event.songCount}곡 / ${event.message})`);
         break;
+
+      case 'ROUND_START':
+        setStatus('PLAYING');
+        setCurrentVideoId(event.videoURL);
+        setRoundEndInfo(null);
+        setGameStartInfo(null);
+        setRoundIndex(event.roundIndex);
+        setCurrentRound(event.currentRound);
+        setTotalRound(event.totalRound);
+        setLogs([]);
+        setPlayers(prev => {
+          const idx = prev.findIndex(p => p.name === nickname);
+          setPlayerIndex(idx !== -1 ? idx + 1 : null);
+          return prev;
+        });
+        break;
+
       case 'TIMER_TICK':
         setTimeLeft(event.remainingSeconds);
-        setTotalTime(30); // Default round time
+        setTotalTime(30);
         break;
+
       case 'CORRECT_ANSWER':
         setPlayers(prev => prev.map(p =>
           p.name === event.playerName ? { ...p, score: event.score } : p
         ));
-        addLog(`[시스템] ${stripTag(event.playerName)}님이 정답을 맞혔습니다! 정답: ${event.answer}`);
+
         break;
-      case 'ROUND_TIMEOUT':
-        addLog(`[시스템] 라운드가 종료되었습니다.`);
+
+      case 'ROUND_END':
+        setRoundEndInfo({ answer: event.answer, winner: event.winner });
+        fetchRankRef.current();
         break;
-      case 'GAME_END':
-        {
-          setStatus('RESULT');
-          const finalRankings: Player[] = Object.entries(event.rankings).map(([name, score]) => ({
-            id: name,
-            name,
-            score,
-            isHost: false // Final screen doesn't strictly need isHost
-          }));
-          setPlayers(finalRankings);
-          addLog('[시스템] 게임이 종료되었습니다.');
-          break;
-        }
+
+      case 'GAME_RESULT': {
+        setStatus('RESULT');
+        setPlayerIndex(null);
+        setGameStartInfo(null);
+        setRoundEndInfo(null);
+        setLogs([]);
+        const finalRankings: Player[] = event.rankings
+          .split('\n')
+          .filter(line => line.trim() !== '')
+          .map(line => {
+            const colonIdx = line.lastIndexOf(':');
+            const name = line.substring(0, colonIdx).trim();
+            const score = parseInt(line.substring(colonIdx + 1).trim(), 10) || 0;
+            return { id: name, name, score, isHost: false };
+          });
+        setPlayers(finalRankings);
+        break;
+      }
     }
   }, [addLog, nickname, roomId, fetchRoomUsers]);
 
@@ -157,7 +202,6 @@ export const useGameLogic = () => {
   }, [addLog, handleEvent]);
 
   const leaveRoom = useCallback(async () => {
-    // API 호출은 best-effort: 성공/실패에 관계없이 클라이언트 상태는 항상 초기화
     if (roomId) {
       try {
         await axios.post(`/game/rooms/${roomId}/leave`, null, {
@@ -174,9 +218,11 @@ export const useGameLogic = () => {
     setStatus('ROOM_LIST');
     setPlayers([]);
     setIsHost(false);
+    setPlayerIndex(null);
+    setGameStartInfo(null);
+    setRoundEndInfo(null);
     addLog('[시스템] 방에서 퇴장했습니다.');
   }, [roomId, nickname, addLog]);
-
 
   useEffect(() => {
     localStorage.setItem('ums_status', status);
@@ -188,22 +234,57 @@ export const useGameLogic = () => {
   }, [status, roomId]);
 
   useEffect(() => {
-    if (status === 'WAITING' || status === 'PLAYING') {
-      if (roomId) {
-        connectWebSocket(roomId);
-        // If we are in WAITING/PLAYING, we should also ensure nickname is there
-        if (nickname) {
-          setPlayers(prev => {
-            if (prev.length === 0) {
-              return [{ id: nickname, name: nickname, isHost, score: 0 }];
+    const bootstrap = async () => {
+      if (status === 'WAITING' || status === 'PLAYING') {
+        if (roomId) {
+          if (status === 'PLAYING') {
+            try {
+              await axios.post(`/game/rooms/${roomId}/join`, null, {
+                headers: { playerName: encodeURIComponent(nickname) }
+              });
+            } catch (error: any) {
+              const status409 = error?.response?.status === 409;
+              const redirectRoomId = error?.response?.data?.data?.redirectRoomId
+                ?? error?.response?.data?.redirectRoomId;
+              if (status409 && redirectRoomId) {
+                // 이미 다른 방 게임 중 → 해당 방으로 이동
+                console.log('409: redirecting to active room', redirectRoomId);
+                setRoomId(redirectRoomId);
+                setStatus('PLAYING');
+                setIsBootstrapping(false);
+                connectWebSocket(redirectRoomId);
+                return;
+              }
+              // 기타 실패 → rooms로
+              console.error('Re-join failed on PLAYING re-entry, redirecting to rooms.');
+              setRoomId(null);
+              setStatus('ROOM_LIST');
+              setPlayers([]);
+              setIsHost(false);
+              setPlayerIndex(null);
+              setGameStartInfo(null);
+              setRoundEndInfo(null);
+              setIsBootstrapping(false);
+              return;
             }
-            return prev;
-          });
+          }
+          // 검증 성공 또는 WAITING 상태
+          connectWebSocket(roomId);
+          if (nickname) {
+            setPlayers(prev => {
+              if (prev.length === 0) {
+                return [{ id: nickname, name: nickname, isHost, score: 0 }];
+              }
+              return prev;
+            });
+          }
+        } else {
+          setStatus('ROOM_LIST');
         }
-      } else {
-        setStatus('ROOM_LIST');
       }
-    }
+      setIsBootstrapping(false);
+    };
+    bootstrap();
   }, []); // Run once on mount
 
   // WAITING 페이지 진입/새로고침 시: 서버에서 현재 방 유저 목록을 가져와 동기화
@@ -215,7 +296,8 @@ export const useGameLogic = () => {
 
   useEffect(() => {
     const handlePopState = () => {
-      if (status === 'WAITING' || status === 'PLAYING' || status === 'RESULT') {
+      // PLAYING 중에는 뒤로가기 무시 — 게임 중 이탈 방지 및 localStorage 유지
+      if (status === 'WAITING' || status === 'RESULT') {
         leaveRoom();
       }
     };
@@ -253,8 +335,7 @@ export const useGameLogic = () => {
     localStorage.setItem('ums_nickname', name);
     setNickname(name);
     setStatus('ROOM_LIST');
-    addLog(`[시스템] ${stripTag(name)}님, 시스템에 접속하였습니다.`);
-  }, [addLog]);
+  }, []);
 
   const joinRoom = useCallback(async (room: Room) => {
     try {
@@ -268,45 +349,48 @@ export const useGameLogic = () => {
         setPlayers([{ id: nickname, name: nickname, isHost: room.hostName === nickname, score: 0 }]);
         connectWebSocket(room.id);
         addLog(`[시스템] ${room.name} 방에 입장했습니다.`);
-
-        // Push state to handle back button
         window.history.pushState({ room: room.id }, '');
       } else if (response.data.result === 'FAIL') {
         const code = response.data?.error?.code;
         let message = '방에 입장할 수 없습니다. 잠시 후 다시 시도해주세요.';
-        if (code === 'G001') {
-          message = '해당 방은 인원이 가득 찼습니다.';
-        } else if (code === 'G002') {
-          message = '해당 방을 찾을 수 없습니다. 이미 삭제되었을 수 있습니다.';
-        } else if (code === 'G006') {
-          message = '이미 게임이 진행 중인 방입니다.';
-        }
+        if (code === 'G001') message = '해당 방은 인원이 가득 찼습니다.';
+        else if (code === 'G002') message = '해당 방을 찾을 수 없습니다. 이미 삭제되었을 수 있습니다.';
+        else if (code === 'G006') message = '이미 게임이 진행 중인 방입니다.';
         addLog(`[오류] (${code ?? 'UNKNOWN'}) ${message}`);
         window.alert(message);
       }
     } catch (error: any) {
       console.error('Join room failed:', error);
+      const httpStatus = error?.response?.status;
+      const redirectRoomId = error?.response?.data?.data?.redirectRoomId
+        ?? error?.response?.data?.redirectRoomId;
+      if (httpStatus === 409 && redirectRoomId) {
+        // 이미 게임 중인 방 → 해당 방으로 이동
+        console.log('409: joining active room', redirectRoomId);
+        setRoomId(redirectRoomId);
+        setIsHost(false);
+        setStatus('PLAYING');
+        setPlayers([{ id: nickname, name: nickname, isHost: false, score: 0 }]);
+        connectWebSocket(redirectRoomId);
+        return;
+      }
       const code = error?.response?.data?.error?.code;
       let message = '방에 입장할 수 없습니다. 잠시 후 다시 시도해주세요.';
-      if (code === 'G001') {
-        message = '해당 방은 인원이 가득 찼습니다.';
-      } else if (code === 'G002') {
-        message = '해당 방을 찾을 수 없습니다. 이미 삭제되었을 수 있습니다.';
-      } else if (code === 'G006') {
-        message = '이미 게임이 진행 중인 방입니다.';
-      }
-      addLog(`[오류] (${code ?? 'UNKNOWN'}) ${message}`);
+      if (code === 'G001') message = '해당 방은 인원이 가득 찼습니다.';
+      else if (code === 'G002') message = '해당 방을 찾을 수 없습니다. 이미 삭제되었을 수 있습니다.';
+      else if (code === 'G006') message = '이미 게임이 진행 중인 방입니다.';
       window.alert(message);
     }
-  }, [nickname, addLog, connectWebSocket]);
+  }, [nickname, connectWebSocket]);
 
-  const createRoom = useCallback(async (title: string, maxPlayers: number, category: string) => {
+  const createRoom = useCallback(async (title: string, maxPlayers: number, category: string, songCount: number) => {
     try {
       const response = await axios.post('/game/rooms', {
         title,
         maxPlayers,
         hostName: nickname,
-        category
+        category,
+        songCount
       });
       if (response.data.result === 'SUCCESS') {
         const newRoomId = response.data.data;
@@ -316,8 +400,6 @@ export const useGameLogic = () => {
         setPlayers([{ id: nickname, name: nickname, isHost: true, score: 0 }]);
         connectWebSocket(newRoomId);
         addLog(`[시스템] 방을 생성했습니다: ${title}`);
-
-        // Push state to handle back button
         window.history.pushState({ room: newRoomId }, '');
       }
     } catch (error) {
@@ -341,6 +423,41 @@ export const useGameLogic = () => {
     }
   }, [roomId, isHost, nickname, addLog]);
 
+  const fetchRank = useCallback(async () => {
+    if (!roomId) return;
+    try {
+      const response = await axios.get(`/game/rooms/${roomId}/play/rank`, {
+        headers: nickname ? { playerName: encodeURIComponent(nickname) } : undefined,
+      });
+      if (response.data?.result === 'SUCCESS' && Array.isArray(response.data.data)) {
+        const rankData: { player: string; score: number }[] = response.data.data;
+        setPlayers(prev => {
+          const prevMap = new Map(prev.map(p => [p.name, p]));
+          return rankData.map(({ player, score }) => ({
+            id: player,
+            name: player,
+            isHost: prevMap.get(player)?.isHost ?? false,
+            score,
+          }));
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch rank:', error);
+      // 랝킹 조회 실패 시 로그만 남기고 게임 유지
+      addLog('[오류] 랭킹 정보를 불러오지 못했습니다.');
+    }
+  }, [roomId, nickname, addLog]);
+
+  // fetchRankRef 최신화 — handleEvent 내 ROUND_END에서 ref 통해 호출
+  useEffect(() => {
+    fetchRankRef.current = fetchRank;
+  }, [fetchRank]);
+
+  const changeNickname = useCallback((newName: string) => {
+    localStorage.setItem('ums_nickname', newName);
+    setNickname(newName);
+  }, []);
+
   const sendMessage = useCallback((message: string) => {
     if (!roomId || !stompClient.current || !stompClient.current.connected) return;
     stompClient.current.publish({
@@ -353,6 +470,7 @@ export const useGameLogic = () => {
   return {
     status,
     nickname,
+    roomId,
     players,
     rooms,
     timeLeft,
@@ -360,6 +478,13 @@ export const useGameLogic = () => {
     logs,
     currentVideoId,
     isHost,
+    playerIndex,
+    gameStartInfo,
+    roundEndInfo,
+    roundIndex,
+    currentRound,
+    totalRound,
+    isBootstrapping,
     enterLobby,
     joinRoom,
     createRoom,
@@ -368,6 +493,9 @@ export const useGameLogic = () => {
     sendMessage,
     setStatus,
     addLog,
+    clearLogs,
+    changeNickname,
     fetchRooms,
+    fetchRank,
   };
 };

@@ -5,8 +5,9 @@ interface RoomListPageProps {
   rooms: Room[];
   nickname: string;
   onJoinRoom: (room: Room) => void;
-  onCreateRoom: (title: string, maxPlayers: number, category: string) => void;
+  onCreateRoom: (title: string, maxPlayers: number, category: string, songCount: number) => void;
   onRefreshRooms: () => void;
+  onChangeNickname: (newName: string) => void;
 }
 
 const RoomListPage: React.FC<RoomListPageProps> = ({
@@ -15,6 +16,7 @@ const RoomListPage: React.FC<RoomListPageProps> = ({
   onJoinRoom,
   onCreateRoom,
   onRefreshRooms,
+  onChangeNickname,
 }) => {
   return (
     <div className="w-full min-h-screen flex items-center justify-center p-4">
@@ -24,6 +26,7 @@ const RoomListPage: React.FC<RoomListPageProps> = ({
         onJoinRoom={onJoinRoom}
         onCreateRoom={onCreateRoom}
         onRefreshRooms={onRefreshRooms}
+        onChangeNickname={onChangeNickname}
       />
     </div>
   );

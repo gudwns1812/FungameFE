@@ -6,16 +6,20 @@ import { stripTag } from '../utils/stringUtils';
 interface RoomListProps {
   rooms: Room[];
   onJoinRoom: (room: Room) => void;
-  onCreateRoom: (title: string, maxPlayers: number, category: string) => void;
+  onCreateRoom: (title: string, maxPlayers: number, category: string, songCount: number) => void;
   onRefreshRooms: () => void;
+  onChangeNickname: (newName: string) => void;
   nickname: string;
 }
 
-const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, onRefreshRooms, nickname }) => {
+const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, onRefreshRooms, onChangeNickname, nickname }) => {
   const [showCreate, setShowCreate] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [maxPlayers, setMaxPlayers] = useState(8);
+  const [songCount, setSongCount] = useState(10);
   const [category, setCategory] = useState('KPOP');
+  const [showNicknameEdit, setShowNicknameEdit] = useState(false);
+  const [nicknameInput, setNicknameInput] = useState('');
 
   const categories = [
     { value: 'KPOP', label: 'K-POP' },
@@ -25,12 +29,62 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, on
     { value: 'OST', label: 'OST' }
   ];
 
+  const songCountOptions = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
   return (
     <div className="w-full max-w-4xl flex flex-col gap-6">
+      {/* 닉네임 변경 모달 */}
+      {showNicknameEdit && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.75)' }}
+          onClick={() => setShowNicknameEdit(false)}
+        >
+          <div
+            className="ums-panel flex flex-col gap-4 w-80"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-bold uppercase tracking-widest text-ums-primary">닉네임 변경</p>
+            <input
+              autoFocus
+              type="text"
+              className="ums-input text-sm py-2 px-3"
+              value={nicknameInput}
+              onChange={(e) => setNicknameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && nicknameInput.trim()) {
+                  onChangeNickname(nicknameInput.trim());
+                  setShowNicknameEdit(false);
+                } else if (e.key === 'Escape') {
+                  setShowNicknameEdit(false);
+                }
+              }}
+              maxLength={16}
+              placeholder="새 닉네임"
+            />
+            <div className="flex gap-2">
+              <button
+                className="ums-button flex-1"
+                onClick={() => { if (nicknameInput.trim()) { onChangeNickname(nicknameInput.trim()); setShowNicknameEdit(false); } }}
+              >확인</button>
+              <button
+                className="ums-button-secondary flex-1"
+                onClick={() => setShowNicknameEdit(false)}
+              >취소</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center ums-panel">
         <div>
           <h1 className="text-2xl font-bold uppercase italic">대기실 로비</h1>
-          <p className="text-xs text-ums-secondary uppercase">환영합니다, {stripTag(nickname)}님</p>
+          <button
+            className="text-xs text-ums-secondary uppercase hover:text-ums-primary transition-colors text-left"
+            onClick={() => { setNicknameInput(nickname); setShowNicknameEdit(true); }}
+          >
+            {stripTag(nickname)}님 ✏️
+          </button>
         </div>
         <div className="flex gap-2">
           <button
@@ -89,12 +143,16 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, on
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] uppercase font-bold text-ums-accent opacity-50">방장 (자동 설정)</label>
-              <input
-                className="ums-input border-ums-accent text-ums-accent opacity-50"
-                value={nickname}
-                readOnly
-              />
+              <label className="text-[10px] uppercase font-bold text-ums-accent">곡 수 선택</label>
+              <select
+                className="ums-input border-ums-accent text-ums-accent"
+                value={songCount}
+                onChange={(e) => setSongCount(parseInt(e.target.value))}
+              >
+                {songCountOptions.map(n => (
+                  <option key={n} value={n} className="bg-black text-ums-primary">{n}곡</option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -103,7 +161,7 @@ const RoomList: React.FC<RoomListProps> = ({ rooms, onJoinRoom, onCreateRoom, on
               className="ums-button bg-ums-accent"
               onClick={() => {
                 if (newRoomName.trim()) {
-                  onCreateRoom(newRoomName.trim(), maxPlayers, category);
+                  onCreateRoom(newRoomName.trim(), maxPlayers, category, songCount);
                   setShowCreate(false);
                   setNewRoomName('');
                 }

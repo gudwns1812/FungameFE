@@ -19,10 +19,23 @@ export type GameEvent =
   | { type: 'PLAYER_LEAVE'; player: string }
   | { type: 'HOST_CHANGE'; newHost: string }
   | { type: 'CHAT'; playerName: string; message: string }
-  | { type: 'GAME_START'; songCount: number }
+  | { type: 'GAME_START'; gameType: string; category: string; songCount: number; message: string }
+  | { type: 'ROUND_START'; videoURL: string; roundIndex: number; currentRound: number; totalRound: number }
   | { type: 'TIMER_TICK'; remainingSeconds: number }
   | { type: 'CORRECT_ANSWER'; playerName: string; answer: string; score: number }
-  | { type: 'ROUND_TIMEOUT'; nextSongIndex: number }
-  | { type: 'GAME_END'; rankings: Record<string, number> };
+  | { type: 'ROUND_END'; answer: string; winner: string }
+  | { type: 'GAME_RESULT'; rankings: string };
 
 export type GameStatus = 'LOBBY' | 'ROOM_LIST' | 'WAITING' | 'PLAYING' | 'RESULT';
+
+export interface GameStartInfo {
+  gameType: string;
+  category: string;
+  songCount: number;
+  message: string;
+}
+
+export interface RoundEndInfo {
+  answer: string;
+  winner: string | null;
+}
